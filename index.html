@@ -1,11 +1,67 @@
-<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1"><title>Последний клочок 0.2</title><link rel="stylesheet" href="style.css"></head><body>
-<div id="app"><div class="top"><div class="pill"><b>Последний клочок</b> <span class="small">0.2 tactical</span></div><div class="pill">⚔️ <b id="wave">0/10</b></div><div class="pill">💰 <b id="gold">165</b></div><div class="pill">🏰 <b id="basehp">100</b> HP</div><div class="grow"></div><button id="start" class="primary">Начать волну</button><button id="reset" class="danger">Сброс</button></div>
-<div class="layout"><div class="panel" id="boardWrap"><div id="board" class="board"></div><div id="log"></div></div>
-<div class="side"><div class="panel"><b>Следующая волна</b><div id="preview" class="wavePreview"></div><div class="small">Ты заранее знаешь направления угрозы. Перестрой оборону до старта.</div></div>
-<div class="panel"><b>Нанять</b><div class="shop">
-<button class="build" data-type="guard"><b>🛡️ Страж — 45💰</b><span class="small">Танк · блокирует линию</span></button>
-<button class="build" data-type="archer"><b>🏹 Стрелок — 55💰</b><span class="small">Дальний высокий урон</span></button>
-<button class="build" data-type="mage"><b>🔮 Искровик — 70💰</b><span class="small">Цепной урон по группе</span></button></div></div>
-<div class="panel" id="info"></div></div></div></div>
-<div class="overlay" id="overlay"><div class="modal"><h2 id="modalTitle"></h2><p id="modalText"></p><div id="choices" class="choices"></div></div></div>
-<script src="game.js"></script></body></html>
+<!doctype html>
+<html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
+<title>Frontier 0.3</title><style>
+*{box-sizing:border-box}body{margin:0;background:#101510;color:#eee;font-family:system-ui,-apple-system,sans-serif}button{font:inherit;color:inherit}
+#app{max-width:760px;margin:auto;padding:14px}.top{display:flex;justify-content:space-between;align-items:center;gap:8px}.tag{font-size:12px;color:#9eb89e}.res{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0}.pill{background:#202b20;border:1px solid #354635;border-radius:20px;padding:6px 10px;font-size:13px}
+.card{background:#182018;border:1px solid #334333;border-radius:16px;padding:14px;margin:10px 0;box-shadow:0 8px 25px #0004}.card h3{margin:0 0 7px}.muted{color:#aeb9ae;font-size:13px}.map{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}.tile{min-height:98px;border-radius:14px;border:1px solid #3a4b3a;background:#202920;padding:9px;text-align:left}.tile.lock{filter:brightness(.55)}.tile b{display:block;margin-bottom:5px}.action{width:100%;border:0;border-radius:12px;padding:11px;margin-top:8px;background:#496849}.action.alt{background:#374537}.action:disabled{opacity:.4}.choices{display:grid;gap:8px}.choice{border:1px solid #496049;background:#243024;border-radius:12px;padding:10px;text-align:left}.choice small{display:block;color:#b6c4b6;margin-top:4px}.log{font-size:13px;max-height:160px;overflow:auto}.good{color:#9fe09f}.bad{color:#f0a2a2}.hero{display:flex;gap:8px}.hero>div{flex:1;background:#222c22;padding:8px;border-radius:10px}.bar{height:5px;background:#333;border-radius:4px;margin-top:6px}.bar i{display:block;height:100%;background:#8db88d;border-radius:4px}.footer{text-align:center;color:#778577;font-size:11px;margin:18px}
+</style></head><body><div id="app"></div><script>
+const S={day:1,food:40,wood:30,scrap:12,knowledge:0,morale:60,base:1,turn:0,auto:false,unlocked:2,heroes:[
+{name:'Мира',icon:'🧭',skill:'разведка',hp:100},{name:'Бор',icon:'🔧',skill:'инженер',hp:100},{name:'Рук',icon:'🛡️',skill:'охрана',hp:100}],busy:false,
+places:[
+{name:'Старая ферма',icon:'🌾',risk:1,desc:'Еда и странные следы.'},
+{name:'Радиовышка',icon:'📡',risk:2,desc:'Можно восстановить связь.'},
+{name:'Затопленный карьер',icon:'⛏️',risk:2,desc:'Металл под водой.'},
+{name:'Тёмный лес',icon:'🌲',risk:3,desc:'Кто-то оставляет метки.'},
+{name:'Разбитый конвой',icon:'🚚',risk:3,desc:'Ценный груз. Не пустует.'},
+{name:'Белая зона',icon:'❄️',risk:4,desc:'Сигнал неизвестного происхождения.'}]};
+let pending=null; const $=s=>document.querySelector(s);
+function save(){localStorage.frontier03=JSON.stringify(S)}
+function load(){try{Object.assign(S,JSON.parse(localStorage.frontier03||'{}'))}catch(e){}}
+function r(n){return Math.floor(Math.random()*n)}
+const events={
+'Старая ферма':[
+{t:'В подвале слышен шум.',c:[['Вскрыть осторожно','knowledge',3,'Вы нашли журнал агронома.'],['Забаррикадировать','food',10,'Забрали припасы и не рисковали.'],['Поставить ловушку','wood',8,'Зверь пойман; материалы сохранены.']]},
+{t:'Посевы ещё живы, но вода заражена.',c:[['Изучить воду','knowledge',4,'Получены данные о заражении.'],['Собрать урожай','food',14,'Часть урожая удалось спасти.'],['Очистить канал','morale',8,'Поселение получило чистую воду.']]}],
+'Радиовышка':[{t:'Приёмник ловит повторяющийся сигнал: «Север. Третий день».',c:[['Ответить','morale',10,'Кто-то ответил. На карте появилась новая отметка.'],['Записать частоту','knowledge',6,'Сигнал занесён в архив.'],['Разобрать усилитель','scrap',12,'Получены редкие детали.']]}],
+'Затопленный карьер':[{t:'Насос работает, но топлива хватит лишь на один сектор.',c:[['К складу','scrap',15,'Под водой найден инструмент.'],['К архиву','knowledge',7,'Найдены схемы старого комплекса.'],['К генераторной','wood',12,'Удалось извлечь пригодные материалы.']]}],
+'Тёмный лес':[{t:'Экспедиция нашла костёр, который погас совсем недавно.',c:[['Идти по следу','knowledge',8,'След ведёт дальше на север.'],['Оставить припасы','morale',12,'Наутро на месте появился знак благодарности.'],['Вернуться','food',8,'Риск не оправдан — зато все дома.']]}],
+'Разбитый конвой':[{t:'Груз цел, но вокруг видны свежие следы.',c:[['Быстро забрать груз','scrap',20,'Успели уйти до чужого возвращения.'],['Устроить наблюдение','knowledge',10,'Вы узнали, кто пользуется дорогой.'],['Оставить метку и уйти','morale',10,'Осторожность повысила доверие команды.']]}],
+'Белая зона':[{t:'В снегу стоит работающий терминал без видимого источника питания.',c:[['Подключиться','knowledge',15,'Получен фрагмент карты неизвестной сети.'],['Демонтировать','scrap',25,'Технология пока непонятна, но детали бесценны.'],['Не трогать','morale',15,'Иногда лучший выбор — вернуться живыми.']]}]};
+function log(x,cls=''){S.logs=S.logs||[];S.logs.unshift({x,cls});S.logs=S.logs.slice(0,12)}
+function expedition(i){
+ if(S.busy)return; const p=S.places[i]; if(i>=S.unlocked)return;
+ S.busy=true;S.turn++; render();
+ setTimeout(()=>{S.busy=false; let pool=events[p.name],e=pool[r(pool.length)];pending={place:i,e};render()},1200+300*p.risk)
+}
+function choose(j){
+ let [label,key,val,msg]=pending.e.c[j];S[key]+=val;log(msg,'good');S.food=Math.max(0,S.food-3);S.day++;
+ if(S.turn%2===0&&S.unlocked<S.places.length){S.unlocked++;log('Разведка открыла новую область: '+S.places[S.unlocked-1].name)}
+ if(S.turn===3){log('Открыто строительство мастерской.')}
+ if(S.turn>=5&&!S.auto){log('Можно построить диспетчерскую и автоматизировать безопасные сборы.')}
+ pending=null;save();render()
+}
+function build(){
+ if(S.wood>=25&&S.scrap>=10){S.wood-=25;S.scrap-=10;S.base++;S.morale+=5;log('Поселение выросло до уровня '+S.base+'.','good');save();render()}
+}
+function automate(){
+ if(S.base>=2&&S.knowledge>=10&&S.scrap>=15){S.knowledge-=10;S.scrap-=15;S.auto=true;log('Диспетчерская запущена: рутинные поставки идут без тебя.','good');save();render()}
+}
+function collectAuto(){if(!S.auto)return;S.food+=8;S.wood+=6;log('Диспетчерская доставила обычные ресурсы.');save();render()}
+function reset(){localStorage.removeItem('frontier03');location.reload()}
+function render(){
+ let map=S.places.map((p,i)=>`<button class="tile ${i>=S.unlocked?'lock':''}" onclick="expedition(${i})" ${i>=S.unlocked||S.busy||pending?'disabled':''}><b>${p.icon} ${p.name}</b><span class="muted">${p.desc}</span><br><small>риск: ${'●'.repeat(p.risk)}${'○'.repeat(4-p.risk)}</small></button>`).join('');
+ let modal=pending?`<div class="card"><div class="tag">${S.places[pending.place].icon} ${S.places[pending.place].name}</div><h3>${pending.e.t}</h3><div class="choices">${pending.e.c.map((c,j)=>`<button class="choice" onclick="choose(${j})"><b>${c[0]}</b><small>Последствия не полностью известны</small></button>`).join('')}</div></div>`:'';
+ let canBuild=S.wood>=25&&S.scrap>=10, canAuto=S.base>=2&&S.knowledge>=10&&S.scrap>=15&&!S.auto;
+ $('#app').innerHTML=`<div class="top"><div><b>ПОСЛЕДНИЙ РУБЕЖ</b><div class="tag">prototype 0.3 · день ${S.day}</div></div><button onclick="reset()" class="pill">сброс</button></div>
+ <div class="res"><span class="pill">🍞 ${S.food}</span><span class="pill">🪵 ${S.wood}</span><span class="pill">⚙️ ${S.scrap}</span><span class="pill">📚 ${S.knowledge}</span><span class="pill">🔥 ${S.morale}</span></div>
+ ${modal}
+ <div class="card"><h3>Карта</h3><div class="muted">${S.busy?'Экспедиция в пути…':'Выбери, куда отправить людей. Новые области открываются по мере исследования.'}</div><div class="map" style="margin-top:10px">${map}</div></div>
+ <div class="card"><h3>Поселение · уровень ${S.base}</h3><div class="hero">${S.heroes.map(h=>`<div>${h.icon} <b>${h.name}</b><div class="muted">${h.skill}</div><div class="bar"><i style="width:${h.hp}%"></i></div></div>`).join('')}</div>
+ <button class="action" onclick="build()" ${!canBuild?'disabled':''}>🏗️ Расширить поселение · 25 🪵 + 10 ⚙️</button>
+ ${S.turn>=5&&!S.auto?`<button class="action alt" onclick="automate()" ${!canAuto?'disabled':''}>🗂️ Диспетчерская · 10 📚 + 15 ⚙️</button>`:''}
+ ${S.auto?'<button class="action alt" onclick="collectAuto()">📦 Забрать автоматическую поставку</button>':''}</div>
+ <div class="card"><h3>Журнал</h3><div class="log">${(S.logs||[{x:'Поселение ждёт первого решения.'}]).map(l=>`<div class="${l.cls||''}">• ${l.x}</div>`).join('')}</div></div>
+ <div class="footer">В этой версии проверяем решения, последствия, исследование и постепенную автоматизацию — не графику и не баланс финальной игры.</div>`;
+}
+load();render();
+</script></body></html>
