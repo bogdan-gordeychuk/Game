@@ -14,7 +14,7 @@ places:[
 {name:'Тёмный лес',icon:'🌲',risk:3,desc:'Кто-то оставляет метки.'},
 {name:'Разбитый конвой',icon:'🚚',risk:3,desc:'Ценный груз. Не пустует.'},
 {name:'Белая зона',icon:'❄️',risk:4,desc:'Сигнал неизвестного происхождения.'}]};
-let pending=null; const $=s=>document.querySelector(s);
+let pending=null; let selected=[0]; const $=s=>document.querySelector(s);
 function save(){localStorage.frontier03=JSON.stringify(S)}
 function load(){try{Object.assign(S,JSON.parse(localStorage.frontier03||'{}'))}catch(e){}}
 function r(n){return Math.floor(Math.random()*n)}
@@ -28,15 +28,20 @@ const events={
 'Разбитый конвой':[{t:'Груз цел, но вокруг видны свежие следы.',c:[['Быстро забрать груз','scrap',20,'Успели уйти до чужого возвращения.'],['Устроить наблюдение','knowledge',10,'Вы узнали, кто пользуется дорогой.'],['Оставить метку и уйти','morale',10,'Осторожность повысила доверие команды.']]}],
 'Белая зона':[{t:'В снегу стоит работающий терминал без видимого источника питания.',c:[['Подключиться','knowledge',15,'Получен фрагмент карты неизвестной сети.'],['Демонтировать','scrap',25,'Технология пока непонятна, но детали бесценны.'],['Не трогать','morale',15,'Иногда лучший выбор — вернуться живыми.']]}]};
 function log(x,cls=''){S.logs=S.logs||[];S.logs.unshift({x,cls});S.logs=S.logs.slice(0,12)}
+function toggleHero(i){if(S.busy||pending)return; if(selected.includes(i)){if(selected.length>1)selected=selected.filter(x=>x!==i)}else selected.push(i);render()}
+function riskFor(p){let v=p.risk;selected.forEach(i=>{let sk=S.heroes[i].skill;if((p.name.includes('Радио')||p.name.includes('карьер'))&&sk==='инженер')v--;if((p.name.includes('лес')||p.name.includes('ферм'))&&sk==='разведка')v--;if((p.name.includes('конвой')||p.name.includes('Белая'))&&sk==='охрана')v--});return Math.max(1,v)}
 function expedition(i){
  if(S.busy)return; const p=S.places[i]; if(i>=S.unlocked)return;
- S.busy=true;S.turn++; render();
- setTimeout(()=>{S.busy=false; let pool=events[p.name],e=pool[r(pool.length)];pending={place:i,e};render()},1200+300*p.risk)
+ S.busy=true;S.turn++; S.lastTeam=[...selected]; render();
+ setTimeout(()=>{S.busy=false;let rr=riskFor(p);if(Math.random()<rr*.10){let h=S.heroes[S.lastTeam[r(S.lastTeam.length)]];h.hp=Math.max(35,h.hp-25);log(h.name+' получил травму в экспедиции.','bad')}let pool=events[p.name],e=pool[r(pool.length)];pending={place:i,e};render()},1200+300*p.risk)
 }
 function choose(j){
- let [label,key,val,msg]=pending.e.c[j];S[key]+=val;log(msg,'good');S.food=Math.max(0,S.food-3);S.day++;
+ let [label,key,val,msg]=pending.e.c[j];S[key]+=val;
+ let pl=S.places[pending.place];pl.visits=(pl.visits||0)+1;
+ if((label.includes('Разобрать')||label.includes('Демонтировать'))&&!pl.changed){pl.changed=true;pl.desc='Ресурс разобран. Здесь осталось только исследовать последствия.';log(pl.name+' навсегда изменена твоим решением.','bad')}log(msg,'good');S.food=Math.max(0,S.food-3);S.day++;
  if(S.turn%2===0&&S.unlocked<S.places.length){S.unlocked++;log('Разведка открыла новую область: '+S.places[S.unlocked-1].name)}
  if(S.turn===3){log('Открыто строительство мастерской.')}
+ if(S.turn===6){log('Ночью у ворот нашли посылку с меткой из Тёмного леса. Мир помнит некоторые решения.','good');S.scrap+=6}
  if(S.turn>=5&&!S.auto){log('Можно построить диспетчерскую и автоматизировать безопасные сборы.')}
  pending=null;save();render()
 }
@@ -52,16 +57,16 @@ function render(){
  let map=S.places.map((p,i)=>`<button class="tile ${i>=S.unlocked?'lock':''}" onclick="expedition(${i})" ${i>=S.unlocked||S.busy||pending?'disabled':''}><b>${p.icon} ${p.name}</b><span class="muted">${p.desc}</span><br><small>риск: ${'●'.repeat(p.risk)}${'○'.repeat(4-p.risk)}</small></button>`).join('');
  let modal=pending?`<div class="card"><div class="tag">${S.places[pending.place].icon} ${S.places[pending.place].name}</div><h3>${pending.e.t}</h3><div class="choices">${pending.e.c.map((c,j)=>`<button class="choice" onclick="choose(${j})"><b>${c[0]}</b><small>Последствия не полностью известны</small></button>`).join('')}</div></div>`:'';
  let canBuild=S.wood>=25&&S.scrap>=10, canAuto=S.base>=2&&S.knowledge>=10&&S.scrap>=15&&!S.auto;
- $('#app').innerHTML=`<div class="top"><div><b>ПОСЛЕДНИЙ РУБЕЖ</b><div class="tag">prototype 0.3 · день ${S.day}</div></div><button onclick="reset()" class="pill">сброс</button></div>
+ $('#app').innerHTML=`<div class="top"><div><b>ПОСЛЕДНИЙ РУБЕЖ</b><div class="tag">prototype 0.4 · день ${S.day}</div></div><button onclick="reset()" class="pill">сброс</button></div>
  <div class="res"><span class="pill">🍞 ${S.food}</span><span class="pill">🪵 ${S.wood}</span><span class="pill">⚙️ ${S.scrap}</span><span class="pill">📚 ${S.knowledge}</span><span class="pill">🔥 ${S.morale}</span></div>
  ${modal}
- <div class="card"><h3>Карта</h3><div class="muted">${S.busy?'Экспедиция в пути…':'Выбери, куда отправить людей. Новые области открываются по мере исследования.'}</div><div class="map" style="margin-top:10px">${map}</div></div>
+ <div class="card"><h3>Состав экспедиции</h3><div class="muted">Нажми на персонажа. Навыки снижают риск подходящих локаций.</div><div class="hero" style="margin-top:8px">${S.heroes.map((h,i)=>`<button class="choice" style="opacity:${selected.includes(i)?1:.45}" onclick="toggleHero(${i})">${h.icon} <b>${h.name}</b><small>${h.skill} · здоровье ${h.hp}%</small></button>`).join('')}</div></div><div class="card"><h3>Карта</h3><div class="muted">${S.busy?'Экспедиция в пути…':'Выбери, куда отправить людей. Новые области открываются по мере исследования.'}</div><div class="map" style="margin-top:10px">${map}</div></div>
  <div class="card"><h3>Поселение · уровень ${S.base}</h3><div class="hero">${S.heroes.map(h=>`<div>${h.icon} <b>${h.name}</b><div class="muted">${h.skill}</div><div class="bar"><i style="width:${h.hp}%"></i></div></div>`).join('')}</div>
  <button class="action" onclick="build()" ${!canBuild?'disabled':''}>🏗️ Расширить поселение · 25 🪵 + 10 ⚙️</button>
  ${S.turn>=5&&!S.auto?`<button class="action alt" onclick="automate()" ${!canAuto?'disabled':''}>🗂️ Диспетчерская · 10 📚 + 15 ⚙️</button>`:''}
  ${S.auto?'<button class="action alt" onclick="collectAuto()">📦 Забрать автоматическую поставку</button>':''}</div>
  <div class="card"><h3>Журнал</h3><div class="log">${(S.logs||[{x:'Поселение ждёт первого решения.'}]).map(l=>`<div class="${l.cls||''}">• ${l.x}</div>`).join('')}</div></div>
- <div class="footer">В этой версии проверяем решения, последствия, исследование и постепенную автоматизацию — не графику и не баланс финальной игры.</div>`;
+ <div class="footer">0.4: состав экспедиции влияет на риск; мир запоминает ключевые решения.</div>`;
 }
 load();render();
 </script></body></html>
