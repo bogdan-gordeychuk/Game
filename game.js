@@ -1,0 +1,56 @@
+const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)], clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+const TYPES={
+ guard:{name:"Страж",icon:"🛡️",cost:45,hp:180,atk:10,range:55,rate:0.7,desc:"Держит линию. Блокирует врагов рядом.",role:"Танк"},
+ archer:{name:"Стрелок",icon:"🏹",cost:55,hp:75,atk:22,range:260,rate:1.15,desc:"Сильный дальний урон, но хрупкий.",role:"DPS"},
+ mage:{name:"Искровик",icon:"🔮",cost:70,hp:65,atk:15,range:220,rate:0.75,desc:"Удар цепляется за второго врага.",role:"Контроль"}
+};
+const WAVES=[
+ [{t:"grunt",n:4,l:1}], [{t:"grunt",n:3,l:0},{t:"grunt",n:3,l:2}],
+ [{t:"runner",n:3,l:1},{t:"grunt",n:3,l:0}], [{t:"grunt",n:4,l:0},{t:"grunt",n:4,l:2},{t:"runner",n:2,l:1}],
+ [{t:"brute",n:2,l:1},{t:"runner",n:3,l:0},{t:"runner",n:3,l:2}],
+ [{t:"grunt",n:5,l:0},{t:"brute",n:2,l:2},{t:"runner",n:4,l:1}],
+ [{t:"brute",n:3,l:0},{t:"brute",n:3,l:2},{t:"runner",n:5,l:1}],
+ [{t:"grunt",n:6,l:0},{t:"grunt",n:6,l:2},{t:"brute",n:3,l:1}],
+ [{t:"runner",n:7,l:0},{t:"runner",n:7,l:2},{t:"brute",n:4,l:1}],
+ [{t:"boss",n:1,l:1},{t:"brute",n:3,l:0},{t:"brute",n:3,l:2},{t:"runner",n:4,l:1}]
+];
+const E={grunt:{icon:"👾",hp:80,speed:25,dmg:12,gold:9},runner:{icon:"🦂",hp:58,speed:48,dmg:10,gold:10},brute:{icon:"👹",hp:210,speed:17,dmg:22,gold:18},boss:{icon:"🐲",hp:1050,speed:11,dmg:55,gold:120}};
+const PERKS=[
+ {name:"Разрывные стрелы",text:"Стрелки наносят 45% урона ближайшему второму врагу.",tag:"archerSplash"},
+ {name:"Стена щитов",text:"Стражи получают +55% HP и блокируют врагов дальше от базы.",tag:"guardWall"},
+ {name:"Цепная молния",text:"Искровик цепляет до 3 целей вместо 2.",tag:"mageChain"},
+ {name:"Военная экономика",text:"+35% золота за убийства, но враги получают +15% HP.",tag:"warEco"},
+ {name:"Последний рубеж",text:"Когда база ниже 40 HP, вся армия наносит ×1.8 урона.",tag:"lastStand"},
+ {name:"Смешанный строй",text:"Если на поле есть все 3 класса, весь урон +30%.",tag:"mixed"},
+ {name:"Охотники на великанов",text:"Урон по громилам и боссу +55%.",tag:"giant"},
+ {name:"Ремонтная бригада",text:"После волны база восстанавливает 12 HP.",tag:"repair"},
+ {name:"Боевой азарт",text:"Каждое убийство на 4 сек ускоряет атаку убийцы на 30%.",tag:"frenzy"}
+];
+let S,raf,last;
+function init(){S={wave:0,gold:165,base:100,maxBase:100,selectedBuild:"guard",selectedSlot:null,units:[],enemies:[],shots:[],perks:[],running:false,nextId:1,time:0};buildBoard();render();log("Выбери бойца и поставь его на клетку. До первой волны у тебя 165 золота.");}
+function buildBoard(){const b=$("#board");b.innerHTML='<div class="lane"></div><div class="lane"></div><div class="lane"></div>';[25,40,55,70].forEach(x=>{let g=document.createElement("div");g.className="gridline";g.style.left=x+"%";b.appendChild(g)});[0,1,2].forEach(l=>{let base=document.createElement("div");base.className="base";base.style.top=(16.67+l*33.33)+"%";base.textContent="🏰";b.appendChild(base);[22,36,50,64].forEach((x,c)=>{let s=document.createElement("button");s.className="slot";s.dataset.l=l;s.dataset.c=c;s.style.left=x+"%";s.style.top=(16.67+l*33.33)+"%";s.onclick=()=>slotClick(l,c);b.appendChild(s)})})}
+function slotClick(l,c){if(S.running)return;let u=S.units.find(x=>x.l===l&&x.c===c);if(u){S.selectedSlot=u.id;render();return}let t=TYPES[S.selectedBuild];if(S.gold<t.cost){toast("Не хватает золота");return}S.gold-=t.cost;S.units.push({id:S.nextId++,type:S.selectedBuild,l,c,hp:t.hp,maxHp:t.hp,level:1,cd:0,buff:0});S.selectedSlot=S.units.at(-1).id;render();log(t.name+" поставлен на линию "+(l+1));}
+function unitStats(u){let t=TYPES[u.type],m=1+.35*(u.level-1),hp=t.hp*(1+.45*(u.level-1)),atk=t.atk*m,rate=t.rate*(1+.12*(u.level-1));if(S.perks.includes("mixed")&&new Set(S.units.map(x=>x.type)).size===3)atk*=1.3;if(S.perks.includes("lastStand")&&S.base<40)atk*=1.8;if(u.buff>0)rate*=1.3;return{...t,hp,atk,rate}}
+function render(){ $("#wave").textContent=S.wave+"/10";$("#gold").textContent=Math.floor(S.gold);$("#basehp").textContent=Math.max(0,Math.ceil(S.base));$("#start").disabled=S.running||S.wave>=10||S.units.length===0;
+ $$(".build").forEach(b=>b.classList.toggle("selected",b.dataset.type===S.selectedBuild));
+ $$(".slot").forEach(s=>{let l=+s.dataset.l,c=+s.dataset.c,u=S.units.find(x=>x.l===l&&x.c===c);s.classList.toggle("active",u&&u.id===S.selectedSlot);s.classList.toggle("can",!u&&!S.running);if(u){let st=unitStats(u);s.innerHTML='<span class="unitIcon">'+st.icon+'<span class="unitbar"><i style="width:'+clamp(u.hp/st.hp*100,0,100)+'%"></i></span></span>'}else s.innerHTML=""});
+ renderInfo();renderPreview();}
+function renderInfo(){let u=S.units.find(x=>x.id===S.selectedSlot),p=$("#info");if(!u){p.innerHTML='<b>Выбери юнита на поле</b><div class="small">Между волнами можно улучшать, продавать и менять построение.</div>';return}let st=unitStats(u),up=45+u.level*35,sell=Math.floor(TYPES[u.type].cost*.7+Math.max(0,u.level-1)*up*.45);p.innerHTML='<b>'+st.icon+' '+st.name+' · ур. '+u.level+'</b><div class="stat">ATK '+st.atk.toFixed(0)+' · HP '+u.hp.toFixed(0)+'/'+st.hp.toFixed(0)+' · '+st.role+'</div><div class="small">'+st.desc+'</div><div class="upgrade"><button id="up">Улучшить — '+up+'💰</button><button id="sell">Продать — '+sell+'💰</button></div>';$("#up").disabled=S.running||S.gold<up;$("#sell").disabled=S.running;$("#up").onclick=()=>{S.gold-=up;u.level++;let ns=unitStats(u);u.hp=ns.hp;u.maxHp=ns.hp;render();log(st.name+" улучшен до "+u.level)};$("#sell").onclick=()=>{S.gold+=sell;S.units=S.units.filter(x=>x.id!==u.id);S.selectedSlot=null;render()}}
+function renderPreview(){let box=$("#preview");if(S.wave>=10){box.innerHTML='<span class="chip">Финал пройден</span>';return}let groups=WAVES[S.wave];box.innerHTML=groups.map(g=>'<span class="chip">'+E[g.t].icon+' ×'+g.n+' · линия '+(g.l+1)+'</span>').join("")}
+function spawnWave(){let groups=WAVES[S.wave],delay=0;groups.forEach(g=>{for(let i=0;i<g.n;i++){let d=delay+i*.55+Math.random()*.25;setTimeout(()=>{if(!S.running)return;let e=E[g.t],hp=e.hp*(S.perks.includes("warEco")?1.15:1)*(1+S.wave*.035);S.enemies.push({id:S.nextId++,type:g.t,l:g.l,x:96,hp,maxHp:hp,dead:false});},d*1000)}delay+=.4});return groups.reduce((a,g)=>a+g.n,0)}
+function startWave(){if(S.running)return;S.running=true;S.wave++;let expected=spawnWave(),spawnWindow=3500+Math.max(...WAVES[S.wave-1].map(g=>g.n))*.6*1000;S.expected=expected;S.killedThis=0;S.spawnDone=false;setTimeout(()=>S.spawnDone=true,spawnWindow);$("#start").disabled=true;log("Волна "+S.wave+" началась.");last=performance.now();raf=requestAnimationFrame(loop)}
+function loop(now){let dt=Math.min(.05,(now-last)/1000);last=now;S.time+=dt;update(dt);drawActors();if(S.running)raf=requestAnimationFrame(loop)}
+function update(dt){S.units.forEach(u=>{u.cd-=dt;u.buff=Math.max(0,u.buff-dt);let st=unitStats(u),ux=[22,36,50,64][u.c]/100*$("#board").clientWidth;let candidates=S.enemies.filter(e=>!e.dead&&e.l===u.l);let target=candidates.sort((a,b)=>a.x-b.x)[0];if(target){let ex=target.x/100*$("#board").clientWidth,dist=ex-ux;if(dist<=st.range&&u.cd<=0){attack(u,target,st);u.cd=1/st.rate}}});
+ S.enemies.forEach(e=>{if(e.dead)return;let def=E[e.type],blocker=S.units.filter(u=>u.l===e.l&&u.hp>0).sort((a,b)=>b.c-a.c).find(u=>{let ux=[22,36,50,64][u.c];return e.x-ux<(S.perks.includes("guardWall")&&u.type==="guard"?9:6)&&e.x>=ux-1});if(blocker){let st=unitStats(blocker);blocker.hp-=def.dmg*dt*.72;if(blocker.hp<=0){blocker.hp=0;log(st.name+" пал на линии "+(e.l+1));S.units=S.units.filter(x=>x.id!==blocker.id);if(S.selectedSlot===blocker.id)S.selectedSlot=null}}else{e.x-=def.speed*dt;if(e.x<=8){e.dead=true;S.base-=def.dmg;toast("-"+def.dmg+" HP базе");if(S.base<=0){S.base=0;end(false)}}}});
+ S.enemies=S.enemies.filter(e=>!e.dead);if(S.running&&S.spawnDone&&S.enemies.length===0)end(true);render();}
+function attack(u,e,st){let dmg=st.atk;if(S.perks.includes("giant")&&(e.type==="brute"||e.type==="boss"))dmg*=1.55;damage(e,dmg,u);if(u.type==="archer"&&S.perks.includes("archerSplash")){let x=S.enemies.find(q=>q!==e&&!q.dead&&q.l===e.l&&Math.abs(q.x-e.x)<12);if(x)damage(x,dmg*.45,u)}if(u.type==="mage"){let count=S.perks.includes("mageChain")?2:1;S.enemies.filter(q=>q!==e&&!q.dead&&q.l===e.l).sort((a,b)=>Math.abs(a.x-e.x)-Math.abs(b.x-e.x)).slice(0,count).forEach(q=>damage(q,dmg*.55,u))}shot(u,e)}
+function damage(e,d,u){e.hp-=d;floatText(e.x,16.67+e.l*33.33,"-"+Math.round(d));if(e.hp<=0&&!e.dead){e.dead=true;S.killedThis++;let gold=Math.round(E[e.type].gold*(S.perks.includes("warEco")?1.35:1));S.gold+=gold;if(S.perks.includes("frenzy"))u.buff=4}}
+function shot(u,e){let b=$("#board"),p=document.createElement("div");p.className="projectile";p.style.left=[22,36,50,64][u.c]+"%";p.style.top=(16.67+u.l*33.33)+"%";b.appendChild(p);requestAnimationFrame(()=>{p.style.transition="all .18s linear";p.style.left=e.x+"%"});setTimeout(()=>p.remove(),210)}
+function drawActors(){const b=$("#board");$$(".enemy").forEach(x=>x.remove());S.enemies.forEach(e=>{let d=document.createElement("div");d.className="enemy";d.style.left=e.x+"%";d.style.top=(16.67+e.l*33.33)+"%";d.innerHTML=E[e.type].icon+'<span class="bar"><i style="width:'+clamp(e.hp/e.maxHp*100,0,100)+'%"></i></span>';b.appendChild(d)})}
+function floatText(x,y,t){let d=document.createElement("div");d.className="hit";d.textContent=t;d.style.left=x+"%";d.style.top=y+"%";$("#board").appendChild(d);setTimeout(()=>d.remove(),460)}
+function end(win){if(!S.running)return;S.running=false;cancelAnimationFrame(raf);if(!win){showEnd(false);return}let bonus=30+S.wave*8;S.gold+=bonus;if(S.perks.includes("repair"))S.base=Math.min(S.maxBase,S.base+12);S.units.forEach(u=>{let st=unitStats(u);u.hp=Math.min(st.hp,u.hp+st.hp*.22)});log("Волна "+S.wave+" пройдена. Бонус +"+bonus+"💰. Юниты частично восстановлены.");if([2,4,6,8].includes(S.wave))choosePerk();else if(S.wave===10)showEnd(true);render()}
+function choosePerk(){let pool=PERKS.filter(p=>!S.perks.includes(p.tag)).sort(()=>Math.random()-.5).slice(0,3);$("#choices").innerHTML="";pool.forEach(p=>{let b=document.createElement("button");b.className="choice";b.innerHTML='<strong>'+p.name+'</strong><span>'+p.text+'</span>';b.onclick=()=>{S.perks.push(p.tag);$("#overlay").style.display="none";log("Тактика: "+p.name);render()};$("#choices").appendChild(b)});$("#modalTitle").textContent="Выбери тактику";$("#modalText").textContent="Выбор должен изменить решение на поле уже в следующей волне.";$("#overlay").style.display="flex"}
+function showEnd(win){$("#modalTitle").textContent=win?"Победа. Дракон пал.":"Крепость уничтожена.";$("#modalText").textContent=win?"Главный вопрос: хотелось ли тебе пройти ещё раз другим построением?":"Посмотри, какую линию ты недооценил, и попробуй перестроиться.";$("#choices").innerHTML='<button class="choice" onclick="location.reload()"><strong>Новый забег</strong><span>Начать с чистого листа.</span></button>';$("#overlay").style.display="flex"}
+function toast(t){let old=$(".toast");if(old)old.remove();let d=document.createElement("div");d.className="toast";d.textContent=t;$("#board").appendChild(d);setTimeout(()=>d.remove(),900)}
+function log(t){$("#log").innerHTML+="<div>› "+t+"</div>";$("#log").scrollTop=99999}
+$$(".build").forEach(b=>b.onclick=()=>{S.selectedBuild=b.dataset.type;render()});$("#start").onclick=startWave;$("#reset").onclick=()=>location.reload();init();
